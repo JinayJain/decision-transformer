@@ -13,17 +13,9 @@ from stable_baselines3.common.callbacks import (
     CallbackList,
     EveryNTimesteps,
 )
-from stable_baselines3.common.env_util import make_atari_env
-from stable_baselines3.common.vec_env import VecEnv, VecFrameStack
+from stable_baselines3.common.vec_env import VecEnv
 
-from util import seed_everything
-
-
-def build_env(n_envs: int) -> VecEnv:
-    env = make_atari_env("BreakoutNoFrameskip-v4", n_envs=n_envs, seed=42)
-    env = VecFrameStack(env, n_stack=4)
-
-    return env
+from util import build_env, seed_everything
 
 
 class SaveRolloutsCallback(BaseCallback):
