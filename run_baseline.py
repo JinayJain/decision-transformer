@@ -1,5 +1,3 @@
-from typing import Optional
-
 import ale_py
 import gymnasium as gym
 from stable_baselines3 import DQN
@@ -9,7 +7,7 @@ from stable_baselines3.common.vec_env import VecEnv, VecFrameStack
 from util import seed_everything
 
 
-def build_env(mode: Optional[str] = None) -> VecEnv:
+def build_env() -> VecEnv:
     env = make_atari_env("BreakoutNoFrameskip-v4", n_envs=4, seed=42)
     env = VecFrameStack(env, n_stack=4)
     return env
