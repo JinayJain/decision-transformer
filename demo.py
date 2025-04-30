@@ -9,7 +9,7 @@ from util import build_env
 
 def main():
     model = DecisionTransformer()
-    model.load_state_dict(torch.load("artifacts/model_2000.pt"))
+    model.load_state_dict(torch.load("artifacts/model_7000.pt"))
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -25,7 +25,7 @@ def main():
 
     actions = []  # [int]
 
-    target_return = 10.0
+    target_return = 25.0
 
     returns_to_go = [target_return]  # [float]
 
@@ -50,6 +50,7 @@ def main():
             pred_action_logits = model(obs_tensor, action_tensor, rtg_tensor)
 
             action = torch.argmax(pred_action_logits, dim=-1)[:, -1]
+            print(action)
 
         obs, reward, done, info = env.step(action)
         env.render(mode="human")

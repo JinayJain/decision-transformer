@@ -83,6 +83,7 @@ class DecisionTransformer(nn.Module):
             depth=6,
             heads=8,
             attn_flash=True,
+            layer_dropout=0.1,
         )
 
         self.action_proj = nn.Linear(self.d_model, 4, bias=False)

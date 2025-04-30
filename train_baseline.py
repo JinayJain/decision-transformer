@@ -115,9 +115,9 @@ def main():
     env = build_env(n_envs=4)
     test_env = build_env(n_envs=1, is_eval=True)
 
-    model = DQN("CnnPolicy", env, verbose=1, buffer_size=30_000)
+    model = DQN("CnnPolicy", env, verbose=1, buffer_size=50_000)
     model.learn(
-        total_timesteps=1_000_000,
+        total_timesteps=10_000_000,
         callback=CallbackList(
             [
                 EveryNTimesteps(
@@ -126,7 +126,7 @@ def main():
                 ),
             ]
         ),
-        log_interval=4,
+        log_interval=100,
     )
 
     model.save("artifacts/dqn_breakout")
