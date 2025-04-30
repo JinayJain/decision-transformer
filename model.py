@@ -69,10 +69,11 @@ class ReturnsToGoEncoder(nn.Module):
 
 
 class DecisionTransformer(nn.Module):
-    def __init__(self):
+    def __init__(self, d_model: int = 128, max_window_size: int = 30):
         super().__init__()
 
-        self.d_model = 128
+        self.d_model = d_model
+        self.max_window_size = max_window_size
 
         self.obs_enc = ObservationEncoder(self.d_model)
         self.action_enc = ActionEncoder(self.d_model, 4)
@@ -80,14 +81,14 @@ class DecisionTransformer(nn.Module):
 
         self.transformer = Decoder(
             dim=self.d_model,
-            depth=6,
-            heads=8,
+            depth=3,
+            heads=4,
             attn_flash=True,
+            rotary_pos_emb=True,
             layer_dropout=0.1,
         )
 
-        self.action_proj = nn.Linear(self.d_model, 4, bias=False)
-        self.action_proj.weight = self.action_enc.embed.weight
+        self.action_proj = nn.Linear(self.d_model, 4)
 
     def forward(self, observations, actions, returns_to_go, masks=None):
         """
@@ -96,9 +97,8 @@ class DecisionTransformer(nn.Module):
         returns_to_go: (batch_size, n_returns)
         """
 
-        batch_size, seq_len, *_ = observations.shape
+        batch_size, n_obs, *_ = observations.shape
 
-        n_obs = observations.shape[1]
         n_actions = actions.shape[1]
         n_returns = returns_to_go.shape[1]
 

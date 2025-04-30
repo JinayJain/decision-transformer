@@ -1,3 +1,5 @@
+import time
+
 import ale_py
 import gymnasium as gym
 from stable_baselines3 import DQN
@@ -18,6 +20,8 @@ def main():
             action, _states = model.predict(obs, deterministic=True)
             obs, reward, done, info = env.step(action)
             env.render(mode="human")
+
+            time.sleep(1 / 30)
 
     except KeyboardInterrupt:
         pass

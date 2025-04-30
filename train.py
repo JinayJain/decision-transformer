@@ -21,10 +21,10 @@ def main():
         help="Path to HDF5 file containing chunked data",
     )
     parser.add_argument(
-        "--batch_size", type=int, default=64, help="Batch size for training"
+        "--batch_size", type=int, default=128, help="Batch size for training"
     )
     parser.add_argument(
-        "--epochs", type=int, default=10, help="Number of training epochs"
+        "--epochs", type=int, default=5, help="Number of training epochs"
     )
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     parser.add_argument(
@@ -50,8 +50,20 @@ def main():
 
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=args.batch_size)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        prefetch_factor=4,
+        num_workers=4,
+        shuffle=True,
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        prefetch_factor=4,
+        num_workers=2,
+        batch_size=args.batch_size,
+        shuffle=True,
+    )
 
     model = DecisionTransformer().to(device)
 
@@ -91,54 +103,50 @@ def main():
 
             optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
             scheduler.step()
             global_step += 1
 
-            if global_step % args.val_every == 0:
-                model.eval()
-                val_loss_accum = 0.0
-                val_steps = 0
-                with torch.no_grad():
-                    for val_batch in tqdm(val_loader, desc="Validation", leave=False):
-                        observations = val_batch["observations"].to(device)
-                        actions = val_batch["actions"].long().to(device)
-                        rewards_to_go = val_batch["rewards_to_go"].to(device)
-                        masks = val_batch["masks"].to(device)
+        model.eval()
+        val_loss_accum = 0.0
+        val_steps = 0
+        with torch.no_grad():
+            for val_batch in tqdm(val_loader, desc="Validation", leave=False):
+                observations = val_batch["observations"].to(device)
+                actions = val_batch["actions"].long().to(device)
+                rewards_to_go = val_batch["rewards_to_go"].to(device)
+                masks = val_batch["masks"].to(device)
 
-                        pred_action_logits = model(
-                            observations, actions, rewards_to_go, masks=masks
-                        )
+                pred_action_logits = model(
+                    observations, actions, rewards_to_go, masks=masks
+                )
 
-                        pred_action_logits = pred_action_logits.view(
-                            -1, pred_action_logits.size(-1)
-                        )
-                        actions = actions.view(-1)
-                        masked_actions = torch.where(
-                            masks.view(-1), actions, torch.tensor(-100, device=device)
-                        )
+                pred_action_logits = pred_action_logits.view(
+                    -1, pred_action_logits.size(-1)
+                )
+                actions = actions.view(-1)
+                masked_actions = torch.where(
+                    masks.view(-1), actions, torch.tensor(-100, device=device)
+                )
 
-                        loss = criterion(pred_action_logits, masked_actions)
+                loss = criterion(pred_action_logits, masked_actions)
 
-                        if not torch.isnan(loss):
-                            val_loss_accum += loss.item()
-                            val_steps += 1
+                if not torch.isnan(loss):
+                    val_loss_accum += loss.item()
+                    val_steps += 1
 
-                if val_steps > 0:
-                    avg_val_loss = val_loss_accum / val_steps
-                    wandb.log({"val/loss": avg_val_loss}, step=global_step)
-                    print(f"Step: {global_step}, Val Loss: {avg_val_loss:.4f}")
+        if val_steps > 0:
+            avg_val_loss = val_loss_accum / val_steps
+            wandb.log({"val/loss": avg_val_loss}, step=global_step)
+            print(f"Step: {global_step}, Val Loss: {avg_val_loss:.4f}")
 
-                    os.makedirs(args.output_dir, exist_ok=True)
-                    torch.save(
-                        model.state_dict(), f"{args.output_dir}/model_{global_step}.pt"
-                    )
-                else:
-                    print(f"Step: {global_step}, Validation skipped (no valid steps)")
+            os.makedirs(args.output_dir, exist_ok=True)
+            torch.save(model.state_dict(), f"{args.output_dir}/model_{global_step}.pt")
+        else:
+            print(f"Step: {global_step}, Validation skipped (no valid steps)")
 
-                model.train()
+        model.train()
 
 
 if __name__ == "__main__":
