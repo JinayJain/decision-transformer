@@ -47,7 +47,8 @@ class SaveRolloutsCallback(BaseCallback):
         while not done:
             observations.append(obs[0].copy())
 
-            action, _ = self.model.predict(obs, deterministic=True)
+            with torch.no_grad():
+                action, _ = self.model.predict(obs, deterministic=True)
 
             next_obs, reward, done, _ = self.test_env.step(action)
 
@@ -112,7 +113,7 @@ def main():
     gym.register_envs(ale_py)
 
     env = build_env(n_envs=4)
-    rollout_env = build_env(n_envs=1)
+    test_env = build_env(n_envs=1, is_eval=True)
 
     model = DQN("CnnPolicy", env, verbose=1, buffer_size=30_000)
     model.learn(
@@ -121,7 +122,7 @@ def main():
             [
                 EveryNTimesteps(
                     n_steps=100_000,
-                    callback=SaveRolloutsCallback(rollout_env, n_episodes=100),
+                    callback=SaveRolloutsCallback(test_env, n_episodes=1_000),
                 ),
             ]
         ),
@@ -131,7 +132,7 @@ def main():
     model.save("artifacts/dqn_breakout")
 
     env.close()
-    rollout_env.close()
+    test_env.close()
 
 
 if __name__ == "__main__":

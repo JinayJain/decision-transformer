@@ -9,13 +9,15 @@ from util import build_env
 
 def main():
     model = DecisionTransformer()
-    model.load_state_dict(torch.load("model.pt"))
+    model.load_state_dict(torch.load("artifacts/model_36000.pt"))
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
     model.to(device)
     model.eval()
 
-    env = build_env(1)
+    env = build_env(1, is_eval=True)
 
     obs = env.reset()
 
@@ -23,7 +25,9 @@ def main():
 
     actions = []  # [int]
 
-    returns_to_go = [100]  # [float]
+    target_return = 8.0
+
+    returns_to_go = [target_return]  # [float]
 
     while True:
         obs_tensor = torch.stack(observations, dim=1).float()  # [1, T, 84, 84, 4]
@@ -46,7 +50,7 @@ def main():
 
         obs = torch.from_numpy(obs).to(device)
         action = torch.tensor(action, device=device)
-        rtg = returns_to_go[-1] - reward.item()
+        rtg = max(0, returns_to_go[-1] - reward.item())
 
         observations.append(obs)
         actions.append(action.item())
@@ -54,14 +58,13 @@ def main():
 
         print(rtg)
 
-        time.sleep(1 / 60)
+        time.sleep(1 / 30)
 
         if done.all():
             obs = env.reset()
-
             observations = [torch.from_numpy(obs).to(device)]
             actions = []
-            returns_to_go = [100]
+            returns_to_go = [target_return]
 
 
 if __name__ == "__main__":

@@ -23,10 +23,20 @@ def seed_everything(seed: int) -> None:
     torch.backends.cudnn.benchmark = False
 
 
-def build_env(n_envs: int) -> VecEnv:
+def build_env(n_envs: int, is_eval: bool = False) -> VecEnv:
     gym.register_envs(ale_py)
 
-    env = make_atari_env("BreakoutNoFrameskip-v4", n_envs=n_envs, seed=42)
+    eval_args = {
+        "terminal_on_life_loss": True,
+        "clip_reward": False,
+    }
+
+    env = make_atari_env(
+        "BreakoutNoFrameskip-v4",
+        n_envs=n_envs,
+        seed=42,
+        wrapper_kwargs=eval_args if is_eval else None,
+    )
     env = VecFrameStack(env, n_stack=4)
 
     return env
