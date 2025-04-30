@@ -15,10 +15,10 @@ from util import seed_everything
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--chunked_data_dir",
+        "--data_file",
         type=str,
         required=True,
-        help="Directory containing chunked data shards",
+        help="Path to HDF5 file containing chunked data",
     )
     parser.add_argument(
         "--batch_size", type=int, default=64, help="Batch size for training"
@@ -43,7 +43,7 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    dataset = ChunkedRolloutDataset(data_dir=args.chunked_data_dir)
+    dataset = ChunkedRolloutDataset(data_file=args.data_file)
 
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size

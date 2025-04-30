@@ -9,7 +9,7 @@ from util import build_env
 
 def main():
     model = DecisionTransformer()
-    model.load_state_dict(torch.load("artifacts/model_36000.pt"))
+    model.load_state_dict(torch.load("artifacts/model_2000.pt"))
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -25,19 +25,25 @@ def main():
 
     actions = []  # [int]
 
-    target_return = 8.0
+    target_return = 10.0
 
     returns_to_go = [target_return]  # [float]
 
+    max_window_size = 30
+
     while True:
-        obs_tensor = torch.stack(observations, dim=1).float()  # [1, T, 84, 84, 4]
+        obs_tensor = torch.stack(
+            observations[-max_window_size:], dim=1
+        ).float()  # [1, T, 84, 84, 4]
         action_tensor = (
-            torch.tensor(actions, device=device).unsqueeze(0).long()
+            torch.tensor(actions[-max_window_size:], device=device).unsqueeze(0).long()
             if len(actions) > 0
             else torch.empty(device=device, size=(1, 0), dtype=torch.long)
         )  # [1, T]
         rtg_tensor = (
-            torch.tensor(returns_to_go, device=device).unsqueeze(0).float()
+            torch.tensor(returns_to_go[-max_window_size:], device=device)
+            .unsqueeze(0)
+            .float()
         )  # [1, T]
 
         with torch.no_grad():
