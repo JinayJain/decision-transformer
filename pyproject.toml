@@ -6,7 +6,9 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "ale-py==0.10",
+    "datasets>=3.5.1",
     "einops>=0.8.1",
+    "h5py>=3.13.0",
     "opencv-python>=4.11.0.86",
     "pygame>=2.6.1",
     "stable-baselines3>=2.6.0",
