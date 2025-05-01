@@ -38,15 +38,15 @@ def evaluate(model, device, env, target_return, n_episodes=10):
                 pred_action_logits = model(obs_tensor, action_tensor, rtg_tensor)
                 action = torch.argmax(pred_action_logits, dim=-1)[:, -1]
             obs, reward, done, info = env.step(action)
+            env.render(mode="human")
             obs = torch.from_numpy(obs).to(device)
-            action = torch.tensor(action, device=device)
             rtg = max(0, returns_to_go[-1] - reward.item())
             observations.append(obs)
             actions.append(action.item())
             returns_to_go.append(rtg)
             total_reward += reward.item()
         rewards.append(total_reward)
-    return np.mean(rewards), np.std(rewards)
+    return np.mean(rewards), np.median(rewards), np.std(rewards)
 
 
 def main():
@@ -76,25 +76,18 @@ def main():
         target_returns = np.linspace(0.0, 200.0, 21)
 
     means = []
+    medians = []
     stds = []
     for tr in target_returns:
-        mean, std = evaluate(model, device, env, tr, n_episodes=args.episodes)
+        mean, median, std = evaluate(model, device, env, tr, n_episodes=args.episodes)
         means.append(mean)
+        medians.append(median)
         stds.append(std)
         print(f"Target return: {tr:.2f} | Avg reward: {mean:.2f} ± {std:.2f}")
 
-    fig, ax = plt.subplots(figsize=(7, 5), layout="constrained")
-    ax.errorbar(target_returns, means, yerr=stds, fmt="-o", capsize=5)
-    ax.set_xlabel("Target Return")
-    ax.set_ylabel("Average Reward per Episode")
-    ax.set_title("Decision Transformer: Avg Reward vs Target Return")
-    ax.grid(True)
-    plt.savefig(args.output)
-    print(f"Plot saved to {args.output}")
-
-    # save the means and stds to a file
+    # save statistics to a json file
     with open(args.output.replace(".png", ".json"), "w") as f:
-        json.dump({"means": means, "stds": stds}, f)
+        json.dump({"means": means, "medians": medians, "stds": stds}, f)
 
 
 if __name__ == "__main__":
