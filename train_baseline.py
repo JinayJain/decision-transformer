@@ -20,7 +20,7 @@ from util import build_env, seed_everything
 
 class SaveRolloutsCallback(BaseCallback):
     def __init__(
-        self, env: VecEnv, save_dir="artifacts/rollouts", n_episodes=50, verbose=0
+        self, env: VecEnv, save_dir="artifacts/rollouts", n_steps=100, verbose=0
     ):
         super().__init__(verbose)
 
@@ -28,7 +28,7 @@ class SaveRolloutsCallback(BaseCallback):
 
         self.test_env = env
         self.save_dir = save_dir
-        self.n_episodes = n_episodes
+        self.n_steps = n_steps
 
         self.metadata_path = os.path.join(save_dir, "metadata.jsonl")
 
@@ -48,7 +48,7 @@ class SaveRolloutsCallback(BaseCallback):
             observations.append(obs[0].copy())
 
             with torch.no_grad():
-                action, _ = self.model.predict(obs, deterministic=True)
+                action, _ = self.model.predict(obs)
 
             next_obs, reward, done, _ = self.test_env.step(action)
 
@@ -75,13 +75,18 @@ class SaveRolloutsCallback(BaseCallback):
         print(f"Saving rollouts at t={self.num_timesteps}")
 
         with open(self.metadata_path, "a") as metadata_file:
-            for i in range(self.n_episodes):
+            steps = self.n_steps
+            episode = 0
+
+            while steps > 0:
                 observations, actions, rewards, dones = self._run_episode()
+                episode += 1
+                steps -= len(observations)
 
                 rewards_to_go = self._compute_rewards_to_go(rewards)
 
                 save_path = os.path.join(
-                    self.save_dir, f"rollout_t-{self.num_timesteps}_{i}.npz"
+                    self.save_dir, f"rollout_t-{self.num_timesteps}_{episode}.npz"
                 )
 
                 np.savez_compressed(
@@ -96,7 +101,7 @@ class SaveRolloutsCallback(BaseCallback):
                 total_reward = sum(rewards).item()
                 metadata = {
                     "timestep": self.num_timesteps,
-                    "episode": i,
+                    "episode": episode,
                     "path": save_path,
                     "length": len(rewards),
                     "total_reward": total_reward,
@@ -116,23 +121,27 @@ def main():
     test_env = build_env(n_envs=1, is_eval=True)
 
     model = DQN("CnnPolicy", env, verbose=1, buffer_size=50_000)
-    model.learn(
-        total_timesteps=10_000_000,
-        callback=CallbackList(
-            [
-                EveryNTimesteps(
-                    n_steps=100_000,
-                    callback=SaveRolloutsCallback(test_env, n_episodes=1_000),
-                ),
-            ]
-        ),
-        log_interval=100,
-    )
 
-    model.save("artifacts/dqn_breakout")
+    try:
+        model.learn(
+            total_timesteps=5_000_000,
+            callback=CallbackList(
+                [
+                    EveryNTimesteps(
+                        n_steps=100_000,
+                        callback=SaveRolloutsCallback(test_env, n_steps=50_000),
+                    ),
+                ]
+            ),
+            log_interval=100,
+        )
+    except KeyboardInterrupt:
+        pass
+    finally:
+        model.save("artifacts/dqn_breakout")
 
-    env.close()
-    test_env.close()
+        env.close()
+        test_env.close()
 
 
 if __name__ == "__main__":

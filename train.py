@@ -21,12 +21,12 @@ def main():
         help="Path to HDF5 file containing chunked data",
     )
     parser.add_argument(
-        "--batch_size", type=int, default=128, help="Batch size for training"
+        "--batch_size", type=int, default=64, help="Batch size for training"
     )
     parser.add_argument(
         "--epochs", type=int, default=5, help="Number of training epochs"
     )
-    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
+    parser.add_argument("--lr", type=float, default=6e-4, help="Learning rate")
     parser.add_argument(
         "--val_every", type=int, default=1000, help="Validate every N steps"
     )
@@ -60,23 +60,36 @@ def main():
     val_loader = DataLoader(
         val_dataset,
         prefetch_factor=4,
-        num_workers=2,
+        num_workers=4,
         batch_size=args.batch_size,
-        shuffle=True,
+        shuffle=False,
     )
 
     model = DecisionTransformer().to(device)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=0.1)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.1)
     total_steps = args.epochs * len(train_loader)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps)
+    warmup_steps = int(0.1 * total_steps)
+    scheduler = torch.optim.lr_scheduler.SequentialLR(
+        optimizer,
+        schedulers=[
+            torch.optim.lr_scheduler.LinearLR(
+                optimizer, start_factor=0.1, total_iters=warmup_steps
+            ),
+            torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, T_max=total_steps - warmup_steps
+            ),
+        ],
+        milestones=[warmup_steps],
+    )
     criterion = nn.CrossEntropyLoss(ignore_index=-100)
 
     global_step = 0
 
     for epoch in range(args.epochs):
         model.train()
-        for batch in tqdm(train_loader, desc=f"Epoch {epoch + 1}/{args.epochs}"):
+        pbar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{args.epochs}")
+        for batch in pbar:
             observations = batch["observations"].to(device)
             actions = batch["actions"].long().to(device)
             rewards_to_go = batch["rewards_to_go"].to(device)
@@ -103,13 +116,16 @@ def main():
 
             optimizer.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
             scheduler.step()
             global_step += 1
 
+            pbar.set_postfix({"loss": loss.item()})
+
         model.eval()
-        val_loss_accum = 0.0
+        val_loss_total = 0.0
         val_steps = 0
         with torch.no_grad():
             for val_batch in tqdm(val_loader, desc="Validation", leave=False):
@@ -133,11 +149,11 @@ def main():
                 loss = criterion(pred_action_logits, masked_actions)
 
                 if not torch.isnan(loss):
-                    val_loss_accum += loss.item()
+                    val_loss_total += loss.item()
                     val_steps += 1
 
         if val_steps > 0:
-            avg_val_loss = val_loss_accum / val_steps
+            avg_val_loss = val_loss_total / val_steps
             wandb.log({"val/loss": avg_val_loss}, step=global_step)
             print(f"Step: {global_step}, Val Loss: {avg_val_loss:.4f}")
 

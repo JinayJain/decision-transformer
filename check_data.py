@@ -1,14 +1,19 @@
 import sys
 
+import matplotlib.pyplot as plt
 import torch
+from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from dataset import ChunkedRolloutDataset
 from model import DecisionTransformer
+from util import seed_everything
 
 
 def main():
+    seed_everything(42)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     data_path = sys.argv[1]
@@ -16,7 +21,7 @@ def main():
     dataset = ChunkedRolloutDataset(data_path)
 
     model = DecisionTransformer()
-    model.load_state_dict(torch.load("artifacts/model_3150.pt"))
+    model.load_state_dict(torch.load("artifacts/model_2100.pt"))
     model.to(device)
     model.eval()
 
@@ -26,23 +31,26 @@ def main():
     n_total = 0
 
     pbar = tqdm(loader)
+
+    criterion = nn.CrossEntropyLoss()
+
     for batch in pbar:
-        obs = batch["observations"].to(device)
-        action = batch["actions"].to(device)
-        rtg = batch["rewards_to_go"].to(device)
-        done = batch["dones"].to(device)
+        batch_size, seq_len, *_ = batch["observations"].shape
 
-        logits = model(obs, action, rtg)
-        logits = logits[:, -1, :]
+        for t in range(seq_len):
+            obs = batch["observations"][:, : t + 1].to(device)
+            action = batch["actions"][:, : t + 1].to(device)
+            rtg = batch["rewards_to_go"][:, : t + 1].to(device)
 
-        pred_action = logits.argmax(dim=-1).item()
-        target_action = action[:, -1].item()
+            print(rtg)
+            logits = model(obs, action[:, :t], rtg)
+            print(logits.shape)
 
-        n_correct += pred_action == target_action
-        n_total += 1
+            # loss for only the last action
+            if t > 0:
+                loss = criterion(logits[:, -1, :], action[:, -1])
 
-        current_acc = n_correct / n_total
-        pbar.set_postfix({"acc": f"{current_acc:.2%}"})
+                print(loss.item(), action[:, -1], logits[:, -1, :].argmax(dim=-1))
 
     print(f"Final Accuracy: {n_correct / n_total:.2%}")
 

@@ -15,14 +15,16 @@ class ObservationEncoder(nn.Module):
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=4, stride=2),
             nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1),
+            nn.Conv2d(64, 128, kernel_size=3, stride=1),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(64 * 7 * 7, d_model),
+            nn.Linear(128 * 7 * 7, d_model),
         )
 
     def forward(self, x) -> torch.Tensor:
         batch_size, seq_len, *_ = x.shape
+
+        x = x / 255.0
 
         x = rearrange(x, "b t h w c -> (b t) c h w")
         x = self.net(x)
@@ -39,12 +41,13 @@ class ActionEncoder(nn.Module):
         self.n_actions = n_actions
 
         self.embed = nn.Embedding(n_actions, d_model)
+        self.dropout = nn.Dropout(0.1)
 
     def forward(self, x) -> torch.Tensor:
         batch_size, seq_len, *_ = x.shape
 
         x = rearrange(x, "b t -> (b t)")
-        x = self.embed(x)
+        x = self.dropout(self.embed(x))
         x = rearrange(x, "(b t) d -> b t d", b=batch_size, t=seq_len)
 
         return x
@@ -57,12 +60,13 @@ class ReturnsToGoEncoder(nn.Module):
         self.d_model = d_model
 
         self.proj = nn.Linear(1, d_model, bias=False)
+        self.dropout = nn.Dropout(0.1)
 
     def forward(self, x) -> torch.Tensor:
         batch_size, seq_len, *_ = x.shape
 
         x = rearrange(x, "b t -> (b t) 1")
-        x = self.proj(x)
+        x = self.dropout(self.proj(x))
         x = rearrange(x, "(b t) d -> b t d", b=batch_size, t=seq_len)
 
         return x
@@ -81,14 +85,15 @@ class DecisionTransformer(nn.Module):
 
         self.transformer = Decoder(
             dim=self.d_model,
-            depth=3,
-            heads=4,
+            depth=6,
+            heads=8,
             attn_flash=True,
-            rotary_pos_emb=True,
             layer_dropout=0.1,
         )
 
         self.action_proj = nn.Linear(self.d_model, 4)
+
+        self.pos_emb = nn.Embedding(max_window_size, d_model)
 
     def forward(self, observations, actions, returns_to_go, masks=None):
         """
@@ -102,12 +107,20 @@ class DecisionTransformer(nn.Module):
         n_actions = actions.shape[1]
         n_returns = returns_to_go.shape[1]
 
-        # embed observations, actions, returns_to_go into a shared embedding space
-        obs_embed = self.obs_enc(observations)  # (batch_size, n_obs, d_model)
-        action_embed = self.action_enc(actions)  # (batch_size, n_actions, d_model)
-        rtg_embed = self.rtg_enc(returns_to_go)  # (batch_size, n_returns, d_model)
+        pos_emb = self.pos_emb(
+            torch.arange(n_obs, device=observations.device, dtype=torch.long)
+        )[None, :, :]
 
-        # TODO: add positional encodings, by timestep
+        # embed observations, actions, returns_to_go into a shared embedding space
+        obs_embed = (
+            self.obs_enc(observations) + pos_emb[:, :n_obs, :]
+        )  # (batch_size, n_obs, d_model)
+        action_embed = (
+            self.action_enc(actions) + pos_emb[:, :n_actions, :]
+        )  # (batch_size, n_actions, d_model)
+        rtg_embed = (
+            self.rtg_enc(returns_to_go) + pos_emb[:, :n_returns, :]
+        )  # (batch_size, n_returns, d_model)
 
         # interleave returns_to_go, observations, actions
         x = torch.empty(

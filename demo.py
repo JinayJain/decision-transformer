@@ -1,3 +1,4 @@
+import argparse
 import time
 
 import torch
@@ -7,8 +8,13 @@ from util import build_env
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", type=str, required=True)
+    parser.add_argument("--target-return", type=float, required=True)
+    args = parser.parse_args()
+
     model = DecisionTransformer()
-    model.load_state_dict(torch.load("artifacts/model_3500.pt"))
+    model.load_state_dict(torch.load(args.model))
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -24,23 +30,23 @@ def main():
 
     actions = []  # [int]
 
-    target_return = 90.0
+    target_return = args.target_return
 
     returns_to_go = [target_return]  # [float]
 
-    max_window_size = 60
-
     while True:
         obs_tensor = torch.stack(
-            observations[-max_window_size:], dim=1
+            observations[-model.max_window_size :], dim=1
         ).float()  # [1, T, 84, 84, 4]
         action_tensor = (
-            torch.tensor(actions[-max_window_size:], device=device).unsqueeze(0).long()
+            torch.tensor(actions[-model.max_window_size :], device=device)
+            .unsqueeze(0)
+            .long()
             if len(actions) > 0
             else torch.empty(device=device, size=(1, 0), dtype=torch.long)
         )  # [1, T]
         rtg_tensor = (
-            torch.tensor(returns_to_go[-max_window_size:], device=device)
+            torch.tensor(returns_to_go[-model.max_window_size :], device=device)
             .unsqueeze(0)
             .float()
         )  # [1, T]
@@ -54,13 +60,15 @@ def main():
 
         obs = torch.from_numpy(obs).to(device)
         action = torch.tensor(action, device=device)
-        rtg = max(0, returns_to_go[-1] - reward.item())
+        rtg = max(target_return * 0.1, returns_to_go[-1] - reward.item())
 
         observations.append(obs)
         actions.append(action.item())
         returns_to_go.append(rtg)
 
         print(rtg)
+
+        time.sleep(0.01)
 
         if done.all():
             obs = env.reset()
